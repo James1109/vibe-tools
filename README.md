@@ -1,6 +1,5 @@
 # vibe-tools
 Vibe Coding 出來的小工具
-# 網頁產品規格書（Product Specification）
 
 ## 一、 專案基本資料
 * **專案名稱**：台灣氣象生活儀表板 (Taiwan Weather Life Dashboard)
