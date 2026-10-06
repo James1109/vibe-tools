@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="zh-Hant-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>台灣氣象生活儀表板</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/topojson/3.0.2/topojson.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+:root{--bg1:#e8f1fb;--bg2:#cfe3f7;--glass:rgba(255,255,255,.55);--bd:rgba(255,255,255,.8);--tx:#14283d;--mut:#5b7189;--acc:#0b7fd1;--land:#9cc7ea;--hov:#ffb347;--sel:#0b7fd1;--ok:#1a9d5c;--mid:#d89a00;--bad:#d6453d;--grid:rgba(20,40,61,.1)}
+:root[data-theme=dark]{--bg1:#070d1a;--bg2:#10213f;--glass:rgba(20,34,62,.55);--bd:rgba(120,170,255,.2);--tx:#e6efff;--mut:#8da6c9;--acc:#4cc2ff;--land:#2b4a7a;--hov:#ffb347;--sel:#4cc2ff;--ok:#3ddc97;--mid:#ffd166;--bad:#ff6b6b;--grid:rgba(230,239,255,.1)}
+*{box-sizing:border-box;margin:0}
+body{font-family:"Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif;color:var(--tx);min-height:100vh;padding:20px;background:radial-gradient(circle at 15% 10%,var(--bg2),transparent 55%),var(--bg1);transition:background .3s,color .3s}
+.glass{background:var(--glass);border:1px solid var(--bd);border-radius:20px;backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);box-shadow:0 8px 32px rgba(0,20,60,.15);padding:18px}
+header{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap}
+h1{font-size:1.4rem}.sub{font-size:.8rem;color:var(--mut)}
+button#theme{cursor:pointer;border:1px solid var(--bd);background:var(--glass);color:var(--tx);padding:8px 16px;border-radius:99px;font-size:.9rem;backdrop-filter:blur(10px)}
+button#theme:hover{border-color:var(--acc)}button:focus-visible,path:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+.grid{display:grid;grid-template-columns:minmax(260px,380px) 1fr;gap:16px}
+@media(max-width:820px){.grid{grid-template-columns:1fr}}
+svg#map{width:100%;height:72vh;max-height:78vh;display:block;margin:auto}
+svg path{fill:var(--land);stroke:var(--bg1);stroke-width:1.2;vector-effect:non-scaling-stroke;stroke-linejoin:round;cursor:pointer;transition:fill .15s}
+svg path:hover{fill:var(--hov)}svg path.sel{fill:var(--sel)}
+svg text{font-size:8px;fill:var(--tx);pointer-events:none;text-anchor:middle;font-weight:600}
+.right{display:flex;flex-direction:column;gap:16px}
+.top{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px}
+.city{font-size:1.6rem;font-weight:700}.temp{font-size:3.4rem;font-weight:300;line-height:1}
+.badge{font-size:.72rem;padding:3px 10px;border-radius:99px;border:1px solid var(--bd)}.badge.live{color:var(--ok)}.badge.sim{color:var(--mid)}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(90px,1fr));gap:10px;margin-top:14px}
+.stat{padding:10px;border-radius:12px;background:var(--grid)}.stat b{display:block;font-size:1.05rem}.stat span{font-size:.75rem;color:var(--mut)}
+.idx{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px}
+.card{padding:14px;border-radius:16px;background:var(--glass);border:1px solid var(--bd)}
+.card h3{font-size:.95rem;display:flex;justify-content:space-between}.lv{font-size:.8rem;font-weight:700}
+.bar{height:8px;border-radius:9px;background:var(--grid);margin:10px 0 8px;overflow:hidden}.bar i{display:block;height:100%;border-radius:9px;transition:width .6s}
+.tip{font-size:.78rem;color:var(--mut);line-height:1.5}
+.chartbox{height:260px;position:relative}
+</style>
+</head>
+<body>
+<header>
+  <div><h1>🌤 台灣氣象生活儀表板</h1><div class="sub">點擊地圖縣市查看即時天氣、24 小時溫度與生活指數</div></div>
+  <button id="theme" aria-label="切換深淺色模式">🌙 深色模式</button>
+</header>
+<div class="grid">
+  <section class="glass"><svg id="map" viewBox="0 0 250 470" role="group" aria-label="台灣地圖"></svg><div class="sub" id="mapSrc" style="text-align:center;margin-top:6px">地圖載入中…</div></section>
+  <div class="right">
+    <section class="glass">
+      <div class="top">
+        <div><div class="city" id="cName">載入中…</div><div id="cDesc" class="sub"></div></div>
+        <div style="text-align:right"><div class="temp" id="cTemp">--°</div><span class="badge" id="src"></span></div>
+      </div>
+      <div class="stats" id="stats"></div>
+    </section>
+    <section class="idx" id="idx"></section>
+    <section class="glass"><div class="chartbox"><canvas id="chart"></canvas></div></section>
+  </div>
+</div>
+<script>
+const $=s=>document.querySelector(s);
+// [簡稱(比對 TopoJSON 縣市名,臺→台), 顯示名稱, 緯度, 經度, 模擬基準溫度]
+const R=[["基隆","基隆",25.13,121.74,24],["台北","台北",25.04,121.56,25],["新北","新北",25.01,121.46,25],["桃園","桃園",24.99,121.30,25],["新竹縣","新竹縣",24.84,121.01,25],["新竹市","新竹市",24.80,120.97,25],["苗栗","苗栗",24.56,120.82,25],["台中","台中",24.15,120.67,26],["彰化","彰化",24.07,120.54,26],["南投","南投",23.96,120.97,23],["雲林","雲林",23.71,120.43,26],["嘉義縣","嘉義縣",23.46,120.57,26],["嘉義市","嘉義市",23.48,120.45,26],["台南","台南",22.99,120.21,27],["高雄","高雄",22.63,120.30,28],["屏東","屏東",22.55,120.55,28],["宜蘭","宜蘭",24.76,121.75,24],["花蓮","花蓮",23.99,121.60,25],["台東","台東",22.76,121.14,27],["澎湖","澎湖",23.57,119.57,26],["金門","金門",24.45,118.38,25],["連江","連江(馬祖)",26.16,119.95,23]];
+// 備用手繪地圖(公開地圖載入失敗時使用)
+const FB={"新北":"160,16 196,20 214,36 205,60 178,70 172,88 150,86 133,70 128,42 140,28","宜蘭":"178,70 205,60 228,52 224,96 185,105 172,88","桃園":"128,42 133,70 150,86 172,88 165,102 145,100 120,98 103,80","新竹縣":"92,100 103,80 120,98 145,100 165,102 185,105 185,122 150,125 115,118","苗栗":"92,100 115,118 150,125 135,148 100,152 70,150 78,125","台中":"70,150 100,152 135,148 150,125 185,122 190,155 150,172 100,178 58,178","花蓮":"224,96 185,105 185,122 190,155 188,200 180,250 203,255 210,200 216,150","南投":"100,178 150,172 190,155 188,200 180,250 160,252 135,255 125,232 100,222 98,212 105,195","彰化":"58,178 100,178 105,195 98,212 45,212","雲林":"45,212 98,212 100,222 95,240 40,238","嘉義縣":"40,238 95,240 100,222 125,232 135,255 95,268 38,262","台南":"38,262 95,268 105,290 95,312 68,325 50,320","高雄":"95,268 135,255 160,252 172,290 160,330 132,352 110,372 75,365 50,320 68,325 95,312 105,290","屏東":"75,365 110,372 132,352 160,330 150,372 140,400 128,452 100,415 88,390","台東":"180,250 203,255 195,290 185,330 165,375 140,400 150,372 160,330 172,290 160,252","台北":"162,34 182,34 184,52 170,60 158,52","基隆":"190,20 206,28 200,40 188,38"};
+const NS="http://www.w3.org/2000/svg", svg=$("#map");
+function shape(d,c){
+  const p=document.createElementNS(NS,"path"),t=document.createElementNS(NS,"title");
+  p.setAttribute("d",d);p.tabIndex=0;t.textContent=c[1];p.appendChild(t);c.el=p;
+  p.onclick=()=>select(c);p.onkeydown=e=>{if(e.key==="Enter")select(c)};svg.appendChild(p);
+}
+function label(c,x,y,fs){
+  const t=document.createElementNS(NS,"text");t.setAttribute("x",x);t.setAttribute("y",y);
+  t.style.fontSize=fs+"px";t.textContent=c[1];svg.appendChild(t);
+}
+function drawFallback(){
+  svg.innerHTML="";svg.setAttribute("viewBox","0 0 250 470");
+  Object.entries(FB).forEach(([k,v])=>shape("M"+v.split(" ").join("L")+"Z",R.find(c=>c[0]==k)));
+  Object.keys(FB).forEach(k=>{const c=R.find(x=>x[0]==k),b=c.el.getBBox();label(c,b.x+b.width/2,b.y+b.height/2+3,k=="台北"||k=="基隆"?6:8)});
+  $("#mapSrc").textContent="地圖:內建簡化版(公開地圖載入失敗)";
+}
+// 公開地圖:taiwan-atlas (內政部行政區界,TopoJSON) + D3 + topojson-client
+async function drawTopo(){
+  const U=["https://cdn.jsdelivr.net/npm/taiwan-atlas/counties-mercator-10t.json","https://cdn.jsdelivr.net/npm/taiwan-atlas/counties-10t.json"];
+  for(const u of U){
+    try{
+      const ctl=new AbortController(),to=setTimeout(()=>ctl.abort(),8000);
+      const r=await fetch(u,{signal:ctl.signal});clearTimeout(to);if(!r.ok)continue;
+      const topo=await r.json(),fc=topojson.feature(topo,topo.objects.counties);
+      let path=d3.geoPath(),bd=path.bounds(fc);
+      if(bd[1][0]-bd[0][0]<50){path=d3.geoPath(d3.geoMercator().fitSize([300,500],fc));bd=path.bounds(fc)}
+      const w=bd[1][0]-bd[0][0],h=bd[1][1]-bd[0][1];
+      svg.innerHTML="";svg.setAttribute("viewBox",`${bd[0][0]-8} ${bd[0][1]-8} ${w+16} ${h+16}`);
+      const L=[];
+      fc.features.forEach(f=>{
+        const p=f.properties,n=(p.COUNTYNAME||p.name||p.NAME||"").replace(/臺/g,"台"),c=R.find(x=>n.startsWith(x[0]));
+        if(!c)return;shape(path(f),c);L.push([c,path.centroid(f),path.area(f)]);
+      });
+      if(L.length<10)continue;
+      L.forEach(([c,ct,a])=>{if(a>w*h*.004)label(c,ct[0],ct[1]+w/120,w/45)});
+      $("#mapSrc").textContent="地圖:內政部行政區界 (taiwan-atlas)";return true;
+    }catch(e){}
+  }
+  return false;
+}
+
+// 天氣代碼
+const WC=c=>c==0?["☀️","晴朗"]:c<=2?["🌤","晴時多雲"]:c==3?["☁️","陰天"]:c<=48?["🌫","起霧"]:c<=57?["🌦","毛毛雨"]:c<=67?["🌧","下雨"]:c<=77?["❄️","降雪"]:c<=82?["🌧","陣雨"]:["⛈","雷雨"];
+
+// 取得資料 (失敗則模擬)
+async function getData(c){
+  try{
+    const ctl=new AbortController(),to=setTimeout(()=>ctl.abort(),6000);
+    const u=`https://api.open-meteo.com/v1/forecast?latitude=${c[2]}&longitude=${c[3]}&current=temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,weather_code,wind_speed_10m&hourly=temperature_2m,precipitation_probability,uv_index&forecast_days=2&timezone=Asia%2FTaipei`;
+    const r=await fetch(u,{signal:ctl.signal});clearTimeout(to);
+    if(!r.ok)throw 0;
+    const j=await r.json(),k=j.current,H=j.hourly;
+    let s=H.time.findIndex(t=>t.startsWith(k.time.slice(0,13)));if(s<0)s=0;
+    const hours=[];
+    for(let i=s;i<s+24;i++)hours.push({l:H.time[i].slice(11,16),t:H.temperature_2m[i],p:H.precipitation_probability[i]??0,uv:H.uv_index[i]??0});
+    return{src:"live",t:k.temperature_2m,feel:k.apparent_temperature,hum:k.relative_humidity_2m,wind:k.wind_speed_10m,prec:k.precipitation,code:k.weather_code,hours};
+  }catch(e){return mock(c)}
+}
+function mock(c){
+  const h0=new Date().getHours(),hours=[];
+  for(let i=0;i<24;i++){
+    const h=(h0+i)%24,t=+(c[4]+4.5*Math.sin((h-9)/24*2*Math.PI)).toFixed(1);
+    const p=Math.max(0,Math.min(100,Math.round(40+38*Math.sin(i/5+c[2]*3))));
+    const uv=h>=6&&h<=18?+(9*Math.sin((h-6)/12*Math.PI)).toFixed(1):0;
+    hours.push({l:String(h).padStart(2,"0")+":00",t,p,uv});
+  }
+  const x=hours[0];
+  return{src:"sim",t:x.t,feel:+(x.t+1.5).toFixed(1),hum:Math.round(68+12*Math.sin(c[3])),wind:+(8+5*Math.sin(c[2])).toFixed(1),prec:0,code:x.p>60?61:x.p>35?3:1,hours};
+}
+
+// 生活指數
+const cl=v=>Math.max(0,Math.min(100,Math.round(v)));
+const lvl=s=>s>=75?["適合","var(--ok)"]:s>=50?["普通","var(--mid)"]:["不宜","var(--bad)"];
+function indices(d){
+  const H=d.hours,r12=Math.max(...H.slice(0,12).map(h=>h.p)),r24=Math.max(...H.map(h=>h.p)),uv=Math.max(...H.map(h=>h.uv));
+  const laundry=cl(100-r12*.7-Math.max(0,d.hum-55)*.9+Math.min(uv,7)*3+Math.min(d.wind,15)*.6);
+  const sport=cl(100-r12*.5-Math.abs(d.t-22)*3-Math.max(0,uv-6)*5-Math.max(0,d.hum-80));
+  const car=cl(100-r24*.9-(d.prec>0?25:0));
+  const um=r12>=60?["務必帶傘","var(--bad)"]:r12>=30?["建議帶傘","var(--mid)"]:["不需帶傘","var(--ok)"];
+  return[
+    {i:"👕",n:"曬衣服",s:laundry,L:lvl(laundry),tip:laundry>=75?"日照與濕度條件佳，衣物容易乾。":laundry>=50?"可曬但乾得較慢，注意午後變天。":"濕度高或有雨，建議室內烘乾。"},
+    {i:"🏃",n:"戶外運動",s:sport,L:lvl(sport),tip:`體感 ${d.feel}°C，最高紫外線 ${uv.toFixed(1)}。`+(uv>=8?"請做好防曬。":sport<50?"建議改為室內運動。":"適合出門活動。")},
+    {i:"🚗",n:"洗車",s:car,L:lvl(car),tip:`未來 24 小時最高降雨機率 ${r24}%。`+(car>=75?"洗後可保持乾淨。":"可能白洗，建議延後。")},
+    {i:"☂️",n:"帶傘提醒",s:r12,L:um,tip:`未來 12 小時最高降雨機率 ${r12}%。`,rev:true}
+  ];
+}
+
+let chart,cur=null;
+const css=v=>getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+async function select(c){
+  cur=c;document.querySelectorAll("path.sel").forEach(p=>p.classList.remove("sel"));
+  c.el&&c.el.classList.add("sel");
+  $("#cName").textContent=c[1];$("#cDesc").textContent="更新中…";
+  const d=await getData(c);if(cur!==c)return;
+  const w=WC(d.code);
+  $("#cDesc").textContent=w[0]+" "+w[1];$("#cTemp").textContent=Math.round(d.t)+"°";
+  const b=$("#src");b.className="badge "+d.src;b.textContent=d.src=="live"?"● Open-Meteo 即時資料":"● 模擬備用資料";
+  $("#stats").innerHTML=[["體感",d.feel+"°C"],["濕度",d.hum+"%"],["風速",d.wind+" km/h"],["降雨機率",d.hours[0].p+"%"],["紫外線",d.hours[0].uv.toFixed(1)]].map(x=>`<div class="stat"><b>${x[1]}</b><span>${x[0]}</span></div>`).join("");
+  $("#idx").innerHTML=indices(d).map(x=>`<div class="card"><h3><span>${x.i} ${x.n}</span><span class="lv" style="color:${x.L[1]}">${x.L[0]}</span></h3><div class="bar"><i style="width:${x.s}%;background:${x.L[1]}"></i></div><div class="tip">${x.rev?"降雨機率":"適宜度"} ${x.s}${x.rev?"%":" / 100"}<br>${x.tip}</div></div>`).join("");
+  drawChart(c,d);
+}
+function drawChart(c,d){
+  const L=d.hours.map(h=>h.l),T=d.hours.map(h=>h.t),P=d.hours.map(h=>h.p),tx=css("--mut"),gr=css("--grid");
+  if(chart)chart.destroy();
+  chart=new Chart($("#chart"),{data:{labels:L,datasets:[
+    {type:"line",label:c[1]+" 溫度 (°C)",data:T,borderColor:css("--hov"),backgroundColor:"rgba(255,179,71,.2)",fill:true,tension:.4,pointRadius:2,yAxisID:"y",order:1},
+    {type:"bar",label:"降雨機率 (%)",data:P,backgroundColor:"rgba(76,194,255,.35)",yAxisID:"y1",order:2}]},
+  options:{responsive:true,maintainAspectRatio:false,interaction:{mode:"index",intersect:false},
+    plugins:{legend:{labels:{color:tx}},title:{display:true,text:"未來 24 小時溫度變化",color:tx}},
+    scales:{x:{ticks:{color:tx,maxTicksLimit:8},grid:{color:gr}},y:{ticks:{color:tx},grid:{color:gr},title:{display:true,text:"°C",color:tx}},y1:{position:"right",min:0,max:100,ticks:{color:tx},grid:{display:false}}}}});
+}
+
+// 深淺色切換
+function setTheme(t){document.documentElement.dataset.theme=t;$("#theme").textContent=t=="dark"?"☀️ 淺色模式":"🌙 深色模式";if(cur&&chart){chart.destroy();chart=null;select(cur)}}
+$("#theme").onclick=()=>setTheme(document.documentElement.dataset.theme=="dark"?"light":"dark");
+setTheme(matchMedia("(prefers-color-scheme:dark)").matches?"dark":"light");
+(async()=>{let ok=false;try{ok=await drawTopo()}catch(e){}if(!ok)drawFallback();select(R.find(c=>c[0]=="台北"))})();
+</script>
+</body>
+</html>
