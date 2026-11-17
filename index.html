@@ -17,7 +17,6 @@ header{display:flex;justify-content:space-between;align-items:center;gap:12px;ma
 h1{font-size:1.4rem}.sub{font-size:.8rem;color:var(--mut)}
 button#theme{cursor:pointer;border:1px solid var(--bd);background:var(--glass);color:var(--tx);padding:8px 16px;border-radius:99px;font-size:.9rem;backdrop-filter:blur(10px)}
 button#theme:hover{border-color:var(--acc)}
-/* 拔掉預設會長出方框的 outline，改用透過類別控制描邊與層級 */
 button:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
 svg path:focus{outline:none;}
 
@@ -26,10 +25,11 @@ svg path:focus{outline:none;}
 svg#map{width:100%;height:72vh;max-height:78vh;display:block;margin:auto}
 svg path{fill:var(--land);stroke:var(--bg1);stroke-width:1.2;vector-effect:non-scaling-stroke;stroke-linejoin:round;cursor:pointer;transition:fill .15s, stroke .15s, stroke-width .15s}
 svg path:hover{fill:var(--hov)}
-/* 修正點：取消預設方框，改成用高亮填色、更粗的內側/外側描邊效果 */
-svg path.sel{fill:var(--sel);stroke:#ffffff;stroke-width:2.2;z-index:10}
+svg path.sel{fill:var(--sel);stroke:#ffffff;stroke-width:2.2;}
 
-svg text{font-size:8px;fill:var(--tx);pointer-events:none;text-anchor:middle;font-weight:600}
+/* 讓地圖文字不受滑鼠干擾，並確保永遠在最上層清晰可見 */
+svg text{font-size:8px;fill:var(--tx);pointer-events:none;text-anchor:middle;font-weight:600;user-select:none;}
+
 .right{display:flex;flex-direction:column;gap:16px}
 .top{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px}
 .city{font-size:1.6rem;font-weight:700}.temp{font-size:3.4rem;font-weight:300;line-height:1}
@@ -70,6 +70,7 @@ const R=[["基隆","基隆",25.13,121.74,24],["台北","台北",25.04,121.56,25]
 // 備用手繪地圖(公開地圖載入失敗時使用)
 const FB={"新北":"160,16 196,20 214,36 205,60 178,70 172,88 150,86 133,70 128,42 140,28","宜蘭":"178,70 205,60 228,52 224,96 185,105 172,88","桃園":"128,42 133,70 150,86 172,88 165,102 145,100 120,98 103,80","新竹縣":"92,100 103,80 120,98 145,100 165,102 185,105 185,122 150,125 115,118","苗栗":"92,100 115,118 150,125 135,148 100,152 70,150 78,125","台中":"70,150 100,152 135,148 150,125 185,122 190,155 150,172 100,178 58,178","花蓮":"224,96 185,105 185,122 190,155 188,200 180,250 203,255 210,200 216,150","南投":"100,178 150,172 190,155 188,200 180,250 160,252 135,255 125,232 100,222 98,212 105,195","彰化":"58,178 100,178 105,195 98,212 45,212","雲林":"45,212 98,212 100,222 95,240 40,238","嘉義縣":"40,238 95,240 100,222 125,232 135,255 95,268 38,262","台南":"38,262 95,268 105,290 95,312 68,325 50,320","高雄":"95,268 135,255 160,252 172,290 160,330 132,352 110,372 75,365 50,320 68,325 95,312 105,290","屏東":"75,365 110,372 132,352 160,330 150,372 140,400 128,452 100,415 88,390","台東":"180,250 203,255 195,290 185,330 165,375 140,400 150,372 160,330 172,290 160,252","台北":"162,34 182,34 184,52 170,60 158,52","基隆":"190,20 206,28 200,40 188,38"};
 const NS="http://www.w3.org/2000/svg", svg=$("#map");
+
 function shape(d,c){
   const p=document.createElementNS(NS,"path"),t=document.createElementNS(NS,"title");
   p.setAttribute("d",d);p.tabIndex=0;t.textContent=c[1];p.appendChild(t);c.el=p;
@@ -79,12 +80,20 @@ function label(c,x,y,fs){
   const t=document.createElementNS(NS,"text");t.setAttribute("x",x);t.setAttribute("y",y);
   t.style.fontSize=fs+"px";t.textContent=c[1];svg.appendChild(t);
 }
+
+// 讓所有文字標籤永遠重新移到 SVG 最上層渲染的輔助函式
+function bringLabelsToFront(){
+  svg.querySelectorAll("text").forEach(t=>svg.appendChild(t));
+}
+
 function drawFallback(){
   svg.innerHTML="";svg.setAttribute("viewBox","0 0 250 470");
   Object.entries(FB).forEach(([k,v])=>shape("M"+v.split(" ").join("L")+"Z",R.find(c=>c[0]==k)));
   Object.keys(FB).forEach(k=>{const c=R.find(x=>x[0]==k),b=c.el.getBBox();label(c,b.x+b.width/2,b.y+b.height/2+3,k=="台北"||k=="基隆"?6:8)});
+  bringLabelsToFront();
   $("#mapSrc").textContent="地圖:內建簡化版(公開地圖載入失敗)";
 }
+
 // 公開地圖:taiwan-atlas (內政部行政區界,TopoJSON) + D3 + topojson-client
 async function drawTopo(){
   const U=["https://cdn.jsdelivr.net/npm/taiwan-atlas/counties-mercator-10t.json","https://cdn.jsdelivr.net/npm/taiwan-atlas/counties-10t.json"];
@@ -104,6 +113,7 @@ async function drawTopo(){
       });
       if(L.length<10)continue;
       L.forEach(([c,ct,a])=>{if(a>w*h*.004)label(c,ct[0],ct[1]+w/120,w/45)});
+      bringLabelsToFront(); // 確保文字在最上層
       $("#mapSrc").textContent="地圖:內政部行政區界 (taiwan-atlas)";return true;
     }catch(e){}
   }
@@ -161,10 +171,12 @@ const css=v=>getComputedStyle(document.documentElement).getPropertyValue(v).trim
 async function select(c){
   cur=c;document.querySelectorAll("path.sel").forEach(p=>p.classList.remove("sel"));
   c.el&&c.el.classList.add("sel");
-  // 讓被選取的縣市拉到 SVG 的最上層渲染，確保描邊不會被其他縣市蓋住
+  
   if(c.el && c.el.parentNode) {
     c.el.parentNode.appendChild(c.el);
   }
+  bringLabelsToFront(); // 每次點擊切換時，確保文字再次回到最上層，不被區塊蓋住
+
   $("#cName").textContent=c[1];$("#cDesc").textContent="更新中…";
   const d=await getData(c);if(cur!==c)return;
   const w=WC(d.code);
