@@ -16,12 +16,19 @@ body{font-family:"Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif;co
 header{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap}
 h1{font-size:1.4rem}.sub{font-size:.8rem;color:var(--mut)}
 button#theme{cursor:pointer;border:1px solid var(--bd);background:var(--glass);color:var(--tx);padding:8px 16px;border-radius:99px;font-size:.9rem;backdrop-filter:blur(10px)}
-button#theme:hover{border-color:var(--acc)}button:focus-visible,path:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+button#theme:hover{border-color:var(--acc)}
+/* 拔掉預設會長出方框的 outline，改用透過類別控制描邊與層級 */
+button:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+svg path:focus{outline:none;}
+
 .grid{display:grid;grid-template-columns:minmax(260px,380px) 1fr;gap:16px}
 @media(max-width:820px){.grid{grid-template-columns:1fr}}
 svg#map{width:100%;height:72vh;max-height:78vh;display:block;margin:auto}
-svg path{fill:var(--land);stroke:var(--bg1);stroke-width:1.2;vector-effect:non-scaling-stroke;stroke-linejoin:round;cursor:pointer;transition:fill .15s}
-svg path:hover{fill:var(--hov)}svg path.sel{fill:var(--sel)}
+svg path{fill:var(--land);stroke:var(--bg1);stroke-width:1.2;vector-effect:non-scaling-stroke;stroke-linejoin:round;cursor:pointer;transition:fill .15s, stroke .15s, stroke-width .15s}
+svg path:hover{fill:var(--hov)}
+/* 修正點：取消預設方框，改成用高亮填色、更粗的內側/外側描邊效果 */
+svg path.sel{fill:var(--sel);stroke:#ffffff;stroke-width:2.2;z-index:10}
+
 svg text{font-size:8px;fill:var(--tx);pointer-events:none;text-anchor:middle;font-weight:600}
 .right{display:flex;flex-direction:column;gap:16px}
 .top{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px}
@@ -154,6 +161,10 @@ const css=v=>getComputedStyle(document.documentElement).getPropertyValue(v).trim
 async function select(c){
   cur=c;document.querySelectorAll("path.sel").forEach(p=>p.classList.remove("sel"));
   c.el&&c.el.classList.add("sel");
+  // 讓被選取的縣市拉到 SVG 的最上層渲染，確保描邊不會被其他縣市蓋住
+  if(c.el && c.el.parentNode) {
+    c.el.parentNode.appendChild(c.el);
+  }
   $("#cName").textContent=c[1];$("#cDesc").textContent="更新中…";
   const d=await getData(c);if(cur!==c)return;
   const w=WC(d.code);
