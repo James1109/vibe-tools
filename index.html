@@ -27,7 +27,6 @@ svg path{fill:var(--land);stroke:var(--bg1);stroke-width:1.2;vector-effect:non-s
 svg path:hover{fill:var(--hov)}
 svg path.sel{fill:var(--sel);stroke:#ffffff;stroke-width:2.2;}
 
-/* 讓地圖文字不受滑鼠干擾，並確保永遠在最上層清晰可見 */
 svg text{font-size:8px;fill:var(--tx);pointer-events:none;text-anchor:middle;font-weight:600;user-select:none;}
 
 .right{display:flex;flex-direction:column;gap:16px}
@@ -81,7 +80,6 @@ function label(c,x,y,fs){
   t.style.fontSize=fs+"px";t.textContent=c[1];svg.appendChild(t);
 }
 
-// 讓所有文字標籤永遠重新移到 SVG 最上層渲染的輔助函式
 function bringLabelsToFront(){
   svg.querySelectorAll("text").forEach(t=>svg.appendChild(t));
 }
@@ -113,7 +111,7 @@ async function drawTopo(){
       });
       if(L.length<10)continue;
       L.forEach(([c,ct,a])=>{if(a>w*h*.004)label(c,ct[0],ct[1]+w/120,w/45)});
-      bringLabelsToFront(); // 確保文字在最上層
+      bringLabelsToFront();
       $("#mapSrc").textContent="地圖:內政部行政區界 (taiwan-atlas)";return true;
     }catch(e){}
   }
@@ -127,6 +125,7 @@ const WC=c=>c==0?["☀️","晴朗"]:c<=2?["🌤","晴時多雲"]:c==3?["☁️"
 async function getData(c){
   try{
     const ctl=new AbortController(),to=setTimeout(()=>ctl.abort(),6000);
+    // 修正點：在 hourly 參數中加入 precipitation_probability 與 uv_index
     const u=`https://api.open-meteo.com/v1/forecast?latitude=${c[2]}&longitude=${c[3]}&current=temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,weather_code,wind_speed_10m&hourly=temperature_2m,precipitation_probability,uv_index&forecast_days=2&timezone=Asia%2FTaipei`;
     const r=await fetch(u,{signal:ctl.signal});clearTimeout(to);
     if(!r.ok)throw 0;
@@ -175,14 +174,19 @@ async function select(c){
   if(c.el && c.el.parentNode) {
     c.el.parentNode.appendChild(c.el);
   }
-  bringLabelsToFront(); // 每次點擊切換時，確保文字再次回到最上層，不被區塊蓋住
+  bringLabelsToFront();
 
   $("#cName").textContent=c[1];$("#cDesc").textContent="更新中…";
   const d=await getData(c);if(cur!==c)return;
   const w=WC(d.code);
   $("#cDesc").textContent=w[0]+" "+w[1];$("#cTemp").textContent=Math.round(d.t)+"°";
   const b=$("#src");b.className="badge "+d.src;b.textContent=d.src=="live"?"● Open-Meteo 即時資料":"● 模擬備用資料";
-  $("#stats").innerHTML=[["體感",d.feel+"°C"],["濕度",d.hum+"%"],["風速",d.wind+" km/h"],["降雨機率",d.hours[0].p+"%"],["紫外線",d.hours[0].uv.toFixed(1)]].map(x=>`<div class="stat"><b>${x[1]}</b><span>${x[0]}</span></div>`).join("");
+  
+  // 這裡直接讀取目前小時的降雨機率與紫外線
+  const curP = d.hours[0] ? d.hours[0].p : 0;
+  const curUv = d.hours[0] ? d.hours[0].uv : 0;
+
+  $("#stats").innerHTML=[["體感",d.feel+"°C"],["濕度",d.hum+"%"],["風速",d.wind+" km/h"],["降雨機率",curP+"%"],["紫外線",curUv.toFixed(1)]].map(x=>`<div class="stat"><b>${x[1]}</b><span>${x[0]}</span></div>`).join("");
   $("#idx").innerHTML=indices(d).map(x=>`<div class="card"><h3><span>${x.i} ${x.n}</span><span class="lv" style="color:${x.L[1]}">${x.L[0]}</span></h3><div class="bar"><i style="width:${x.s}%;background:${x.L[1]}"></i></div><div class="tip">${x.rev?"降雨機率":"適宜度"} ${x.s}${x.rev?"%":" / 100"}<br>${x.tip}</div></div>`).join("");
   drawChart(c,d);
 }
@@ -199,7 +203,7 @@ function drawChart(c,d){
 
 // 深淺色切換
 function setTheme(t){document.documentElement.dataset.theme=t;$("#theme").textContent=t=="dark"?"☀️ 淺色模式":"🌙 深色模式";if(cur&&chart){chart.destroy();chart=null;select(cur)}}
-$("#theme").onclick=()=>setTheme(document.documentElement.dataset.theme=="dark"?"light":"dark");
+$("#theme").onclick=()=>setTheme(document.documentElement.dataset.theme=="dark","light","dark");
 setTheme(matchMedia("(prefers-color-scheme:dark)").matches?"dark":"light");
 (async()=>{let ok=false;try{ok=await drawTopo()}catch(e){}if(!ok)drawFallback();select(R.find(c=>c[0]=="台北"))})();
 </script>
